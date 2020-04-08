@@ -62,14 +62,16 @@ namespace UseBlazorSpaSample.Server
             app.MapWhen((a) => a.Request.Host.Port == 5001,
                (app) =>
                {
-                   var files = app.UseBlazorSpa("/", ".private/spa2", Configuration);
+                   // Shows another way
+                   var fileProvider = env.CreateStaticAssetsFileProvider(".private/spa2", Configuration, "/");
+                   app.UseBlazorSpa("/", fileProvider);                 
 
                    app.UseRouting();
                    app.UseEndpoints(endpoints =>
                    {
                        endpoints.MapControllers();
                        endpoints.MapFallbackToFile("index.html",
-                           new StaticFileOptions() { FileProvider = files });
+                           new StaticFileOptions() { FileProvider = fileProvider });
                    });
                });          
         }   }
