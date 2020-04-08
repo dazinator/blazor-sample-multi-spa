@@ -7,7 +7,7 @@ has it's own `StaticWebAssetBasePath` to prevent conflicts, e.g:
  <StaticWebAssetBasePath>.private/spa2</StaticWebAssetBasePath>
 ```
 
-Then the host, gets to serve the one it chooses thanks to some new extensions methods that I produced via taking a lot of the existing blazor extension methods and setup and refactoring it slightly and adding a couple of new extension methods:
+Then the host, gets to serve the one it chooses, on the root url "/" thanks to some new extensions methods that I produced via taking a lot of the existing blazor extension methods and setup and tweaking it, and adding in a couple of helper extension methods "UseBlazorSpa"
 
 Startup.cs:
 
