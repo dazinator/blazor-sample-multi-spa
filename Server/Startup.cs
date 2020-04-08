@@ -42,13 +42,16 @@ namespace UseBlazorSpaSample.Server
                 app.UseHsts();
             }
 
-            // app.UseHttpsRedirection(); // commented so can browse on port http 5000 and 5001 for demo without being redirected to https 5001
+            app.UseHttpsRedirection(); // commented so can browse on port http 5000 and 5001 for demo without being redirected to https 5001
             // app.UseBlazorFrameworkFiles();
             //  app.UseStaticFiles();
-            app.MapWhen((a) => a.Request.Host.Port == 5000,
+            app.MapWhen((ctx) =>
+            {
+                return ctx.Request.Host.Host.Equals("localhost");
+            },
                 (app) =>
-                {          
-                    var files = app.UseBlazorSpa("/", ".private/spa1", Configuration);                   
+                {
+                    var files = app.UseBlazorSpa("/", ".private/spa1", Configuration);
 
                     app.UseRouting();
                     app.UseEndpoints(endpoints =>
@@ -59,20 +62,23 @@ namespace UseBlazorSpaSample.Server
                     });
                 });
 
-            app.MapWhen((a) => a.Request.Host.Port == 5001,
+            app.MapWhen(ctx => ctx.Request.Host.Host.Equals("foo.localhost"),
                (app) =>
                {
                    // Shows another way
-                   var fileProvider = env.CreateStaticAssetsFileProvider(".private/spa2", Configuration, "/");
-                   app.UseBlazorSpa("/", fileProvider);                 
+                   var requestPath = "/app2";
+                   var fileProvider = env.CreateStaticAssetsFileProvider(".private/spa2", Configuration, requestPath);
+                   app.UseBlazorSpa(requestPath, fileProvider, "/index.html");
 
-                   app.UseRouting();
-                   app.UseEndpoints(endpoints =>
-                   {
-                       endpoints.MapControllers();
-                       endpoints.MapFallbackToFile("index.html",
-                           new StaticFileOptions() { FileProvider = fileProvider });
-                   });
-               });          
-        }   }
+               });
+
+            app.UseRouting();
+            app.UseEndpoints(endpoints =>
+            {
+                endpoints.MapControllers();
+                //endpoints.MapFallbackToFile("index.html",
+                //    new StaticFileOptions() { FileProvider = fileProvider });
+            });
+        }
+    }
 }

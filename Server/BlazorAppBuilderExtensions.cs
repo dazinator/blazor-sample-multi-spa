@@ -1,5 +1,6 @@
 ﻿using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Mime;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -13,15 +14,22 @@ using Microsoft.Net.Http.Headers;
 
 public static class BlazorAppBuilderExtensions
 {
-    public static IFileProvider UseBlazorSpa(this IApplicationBuilder appBuilder, PathString requestpath, string staticAssetPath, IConfiguration configuration)
+    public static IFileProvider UseBlazorSpa(this IApplicationBuilder appBuilder,
+        PathString requestpath,
+        string staticAssetPath,
+        IConfiguration configuration,
+        PathString? fallbackFilePath = null)
     {
         var env = appBuilder.ApplicationServices.GetRequiredService<IWebHostEnvironment>();
         var fileProvider = env.CreateStaticAssetsFileProvider(staticAssetPath, configuration, requestpath);
-        UseBlazorSpa(appBuilder, requestpath, fileProvider);
+        UseBlazorSpa(appBuilder, requestpath, fileProvider, fallbackFilePath);
         return fileProvider;
     }
 
-    public static void UseBlazorSpa(this IApplicationBuilder appBuilder, PathString requestpath, IFileProvider fileProvider)
+    public static void UseBlazorSpa(this IApplicationBuilder appBuilder,
+        PathString requestpath,
+        IFileProvider fileProvider,
+        PathString? fallbackFilePath = null)
     {
         // We have to serve blazor _framework static content up with special options.
         appBuilder.MapWhen(ctx => IsBlazorFrameworkFileRequest(requestpath, ctx), subBuilder =>
@@ -31,22 +39,56 @@ public static class BlazorAppBuilderExtensions
             subBuilder.UseStaticFiles(options);
         });
 
-        var spaFileOptions = new StaticFileOptions() { FileProvider = fileProvider };
-        appBuilder.UseStaticFiles(spaFileOptions);
+        appBuilder.MapWhen(ctx => IsBlazorAppRequest(requestpath, ctx, out var remainder), subBuilder =>
+        {
+            // indicator that the SPA owns this URL space so safe to use DefaultFiles. See comment below.
+            if (fallbackFilePath != null)
+            {
+                appBuilder.UseDefaultFiles(new DefaultFilesOptions() { FileProvider = fileProvider });
+            }
+
+            var spaFileOptions = new StaticFileOptions() { FileProvider = fileProvider };
+            appBuilder.UseStaticFiles(spaFileOptions);
+
+            // If we didn't match any SPA files, and if a fallbackFilePath is enforced, 
+            // (i.e we aren't leaving it up to endpoint routing to decide)
+            // then we need to enforce the fallback now. 
+            // This maybe desirable in some apps where the SPA owns a certain URL space and the host isnt meant to handle request within that space.
+            if (fallbackFilePath != null)
+            {
+                appBuilder.Use(next => context =>
+                {
+                    if (context.Response.StatusCode == (int)HttpStatusCode.NotFound)
+                    {
+                        context.Request.Path = fallbackFilePath.Value;
+                            // Set endpoint to null so the static files middleware will handle the request.
+                            context.SetEndpoint(null);
+                    }
+
+                    return next(context);
+
+                });
+
+                // try static files again this time it should resolve fallback file.
+                // assuming that file exists.. We could verify that with the IFileProvider somewhere to catch
+                // problems ahead of time?
+                appBuilder.UseStaticFiles(spaFileOptions);
+
+            }
+        });
+
+
+
     }
 
     private static bool IsBlazorFrameworkFileRequest(PathString basePathPrefix, HttpContext ctx)
     {
-        PathString rest = ctx.Request.Path;
-        if (basePathPrefix != null && basePathPrefix != "/")
+        if (!IsBlazorAppRequest(basePathPrefix, ctx, out var remainder))
         {
-            if (!ctx.Request.Path.StartsWithSegments(basePathPrefix, out rest))
-            {
-                return false;
-            }
+            return false;
         }
 
-        if (!rest.StartsWithSegments("/_framework", out var remaining))
+        if (!remainder.StartsWithSegments("/_framework", out var remaining))
         {
             return false;
         }
@@ -58,6 +100,21 @@ public static class BlazorAppBuilderExtensions
 
         return true;
     }
+
+    private static bool IsBlazorAppRequest(PathString basePathPrefix, HttpContext ctx, out PathString remainder)
+    {
+        remainder = ctx.Request.Path;
+        if (basePathPrefix != null && basePathPrefix != "/")
+        {
+            if (!ctx.Request.Path.StartsWithSegments(basePathPrefix, out remainder))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
 
     private static StaticFileOptions GetBlazorFrameworkStaticFileOptions(IFileProvider fileProvider)
     {
